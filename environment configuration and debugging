@@ -1,0 +1,193 @@
+# 环境配置历程与调试（精简版）
+  
+## （一）装载Ubuntu并清除残留
+
+###  （1）在Microsoft store装载Ubuntu，并注册账户：riscfriedy
+
+###  （2）1. 卸载 Rust 工具链（包括 rustup、cargo、所有 nightly/stable）
+
+rm -rf ~/.rustup ~/.cargo
+sudo apt remove -y rustc cargo
+hash -r
+
+### ===== 2. 卸载 QEMU 和交叉编译器 =====
+
+sudo apt remove -y qemu-system-misc gcc-riscv64-unknown-elf
+sudo apt autoremove -y
+
+### ===== 3. 删掉所有 rCore 相关代码 =====
+
+rm -rf ~/rCore-Tutorial-v3 ~/rCore-Tutorial-v3-old
+
+### ===== 4. 删掉 cargo 配置（镜像/补丁等）=====
+
+rm -f ~/.cargo/config ~/.cargo/config.toml
+sudo rm -f /root/.cargo/config /root/.cargo/config.toml
+
+### ===== 5. 清理 apt 缓存 =====
+sudo apt clean
+sudo apt autoclean
+
+显示 upgrading：0，installing：0， not upgrading：2 无影响
+
+## （二）安装工具
+
+### 1. 安装 Rust
+
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source ~/.cargo/env
+rustup update
+
+### 2. 锁定工具链
+
+rustup toolchain install nightly-2025-02-18
+rustup component add rust-src llvm-tools-preview --toolchain nightly-2025-02-18
+rustup target add riscv64gc-unknown-none-elf --toolchain nightly-2025-02-18
+cargo +nightly-2025-02-18 install cargo-binutils --vers "=0.3.3" --locked
+
+### 3. 配置 rsproxy 镜像
+
+mkdir -p ~/.cargo
+cat > ~/.cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[net]
+retry = 3
+EOF
+
+### 4. 装 QEMU 与交叉编译（覆盖现有，无害）
+
+sudo apt update
+sudo apt install -y qemu-system-misc gcc-riscv64-unknown-elf
+
+显示 -bash: /home/riscfriedy/.cargo/env：No such file or directory(上一轮已经把 ~/.cargo 目录彻底删干净了，所以脚本里执行的 source ~/.cargo/env 找不到文件。这正好证明旧环境已清空，当前处于纯净状态。)
+
+## （三）处理报错（重新安装）
+
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+export PATH="$HOME/.cargo/bin:$PATH"
+rustup toolchain install nightly-2025-02-18
+rustup component add rust-src llvm-tools-preview --toolchain nightly-2025-02-18
+rustup target add riscv64gc-unknown-none-elf --toolchain nightly-2025-02-18
+cargo +nightly-2025-02-18 install cargo-binutils --vers "=0.3.3" --locked
+mkdir -p ~/.cargo
+cat > ~/.cargo/config.toml << 'EOF'
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+[net]
+retry = 3
+EOF
+sudo apt update
+sudo apt install -y qemu-system-misc gcc-riscv64-unknown-elf
+cd ~
+rm -rf rCore-Tutorial-v3
+git clone https://gitee.com/rcore-os/rCore-Tutorial-v3.git
+cd rCore-Tutorial-v3/os
+rustup override set nightly-2025-02-18
+git checkout ch1
+make run
+
+结果：
+报错
+error: the feature panic_info_message has been stable since 1.81.0 and no longer requires an attribute to enable
+--> src/main.rs:14:12
+|
+14 | #![feature(panic_info_message)]
+|            ^^^^^^^^^^^^^^^^^^
+|
+note: the lint level is defined here
+--> src/main.rs:11:9
+|
+11 | #![deny(warnings)]
+|         ^^^^^^^^
+= note: #[deny(stable_features)] implied by #[deny(warnings)]
+error[E0599]: no method named unwrap found for struct PanicMessage in the current scope
+--> src/lang_items.rs:13:28
+|
+13 |         info.message().unwrap()
+|                            ^^^^^^ method not found in PanicMessage<'__>
+error[E0599]: no method named unwrap found for struct PanicMessage in the current scope
+--> src/lang_items.rs:16:58
+|
+16 |         println!("[kernel] Panicked: {}", info.message().unwrap());
+|                                                          ^^^^^^ method not found in PanicMessage<'__>
+For more information about this error, try rustc --explain E0599.
+error: could not compile os (bin "os") due to 3 previous errors
+make: *** [Makefile:58: kernel] Error 101（Panicmessage没有unwrap（）方法）
+riscfriedy@Bootstrap-Physical-reality-310:~/rCore-Tutorial-v3/os$
+
+### 再次处理报错：
+
+#### 报错1（panic_info_message has been stable since 1.81.0）：
+
+该特性在 1.81.0 已稳定，教程代码里还写着 #![feature(panic_info_message)]，在新编译器下属于“多余的稳定特性声明”，且开启了 #![deny(warnings)]，警告变错误。<br>
+#### 报错2（no method named unwrap found for PanicMessage）：
+
+新版本中 info.message() 返回的是 PanicMessage 结构体，不再直接支持 .unwrap()，需改为 .as_str().unwrap_or("")
+处理方法：<br>
+1. 修改 src/main.rs<br>
+找到第 14 行：#![feature(panic_info_message)]，整行删除（或注释掉）。
+按 Ctrl+O 回车保存，Ctrl+X 退出。
+2. 修改 src/lang_items.rs<br>
+找到第 13 行 info.message().unwrap()，改为：info.message().as_str().unwrap_or("no message")<br>
+找到第 16 行 info.message().unwrap()，同样改为：info.message().as_str().unwrap_or("no message")<br>
+
+## （四）进入无图形界面（nographic）”模式，编译已经成功，qemu无法输出图像，切换qemu版本至7.0.0
+
+光标无法响应，单独开终端，杀死进程：pkill -9 -f qemu-system-riscv64<br>
+
+### 切换
+
+依次输入：sudo apt install -y autoconf automake autotools-dev curl libmpc-dev libmpfr-dev libmpg-dev gawk build-essential bison flex texinfo gperf libtool patchutils bc zlib1g-dev libexpat-dev pkg-config libglib2.0-dev libpixman-1-dev git ninja-build<br>
+cd ~
+wget https://download.qemu.org/qemu-7.0.0.tar.xz
+tar xvJf qemu-7.0.0.tar.xz
+cd qemu-7.0.0
+./configure --target-list=riscv64-softmmu
+make -j$(nproc)
+sudo make install<br>
+cd ~/rCore-Tutorial-v3/os
+make run
+
+### 报错1
+
+ERROR: Cannot find Ninja<br>
+即ninja-build 也没装上。<br>
+解决方案：补全依赖：
+1. 补全之前漏掉的依赖（修正了之前的包名错误，加上了 ninja）
+sudo apt install -y libgmp-dev ninja-build
+2. 清理之前失败的空 build 目录，重新配置（必须重跑，才会生成 Makefile）
+rm -rf build
+mkdir build && cd build
+../configure --target-list=riscv64-softmmu
+3. 确认上面 configure 结尾没报 ERROR 后，开始正式编译（10-20分钟）
+make -j$(nproc)
+4. 编译完成后安装
+sudo make install
+
+### 报错2
+
+ERROR: glib-2.56 gthread-2.0 is required
+解决方案：继续补装
+1. 补装 glib/gthread 及其他可能遗漏的依赖（当前已在 build 目录，用绝对路径也行，这里直接执行）
+sudo apt install -y libglib2.0-dev zlib1g-dev libpixman-1-dev pkg-config
+2. 回到源码根目录，清理之前失败的 build 目录
+cd ~/qemu-7.0.0
+rm -rf build
+3. 重新创建目录并配置（必须看到结尾无 ERROR）
+mkdir build && cd build
+../configure --target-list=riscv64-softmmu
+4. 正式编译（10-20分钟，耐心等，无报错再继续）
+make -j$(nproc)
+5. 安装
+sudo make install
+
+## （五）配置完成
+
+输出hello world！
