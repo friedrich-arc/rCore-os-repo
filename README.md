@@ -9,6 +9,11 @@
 - QEMU：7.0.0
 - 平台：WSL2 + Ubuntu + VSCode Remote-WSL
 
+## 环境配置历程
+
+-下载问题，报错处理等详细见文件environment configuration and debugging.md
+
+
 
 
 
