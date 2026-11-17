@@ -1,0 +1,11 @@
+[package]
+name = "user_lib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 第二章的用户库只需要内嵌汇编实现 ecall，不依赖外部 crate。
+# 04priv_csr 里访问 sstatus 的部分也用内嵌汇编（csrw）完成，
+# 因此这里不需要教程中的 riscv crate（避免每次构建都从 GitHub 拉取）。
+# 注意：不要开 [profile.release] debug = true —— 调试段（.debug_*）没有在
+# linker.ld 里安排位置，rust-lld 会报 "file range overlaps with .rodata"。

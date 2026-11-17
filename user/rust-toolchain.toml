@@ -1,0 +1,5 @@
+[toolchain]
+# 与 test_os 内核使用同一个 nightly，避免 user/ 与内核的工具链不一致。
+profile = "minimal"
+channel = "nightly-2025-02-18"
+components = ["rust-src", "llvm-tools-preview", "rustfmt", "clippy"]

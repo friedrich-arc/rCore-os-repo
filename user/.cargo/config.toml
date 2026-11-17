@@ -1,0 +1,29 @@
+[build]
+target = "riscv64gc-unknown-none-elf"
+
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    # 注意：这里【不要】再写 "-Clink-arg=-Tsrc/linker.ld"。
+    # Cargo 会把上层目录 test_os/.cargo/config.toml 的 rustflags 数组和
+    # 本文件的数组【拼接】起来，两边都写就会给链接器传两遍 -T：
+    #   rust-lld 忍了；GNU ld 直接报
+    #     "linker script file 'src/linker.ld' appears multiple times"
+    # 而 cargo 调用 rustc 时的工作目录就是本包根目录（user/），
+    # 上层那条 "-Tsrc/linker.ld" 解析出来正好是 user/src/linker.ld，足够用。
+
+    "-Cforce-frame-pointers=yes",
+
+    # 用 GNU ld 而不是默认的 rust-lld 来链接：新版 rust-lld（LLVM 19+）
+    # 处理这份裸机链接脚本时，会把 .shstrtab 等非装载段摆到文件偏移
+    # 0x1000，正好和 .text 重叠，报
+    #   "unable to place section .text at file offset [0x1000, ...]"
+    #   "section .text file range overlaps with .shstrtab"
+    # GNU ld 是这份教程链接脚本的“原生”解释器，行为正常。
+    "-Zunstable-options",
+    "-Clinker=riscv64-unknown-elf-ld",
+    "-Clinker-flavor=gnu",
+
+    # 链接期就去掉符号表（.symtab/.strtab）：内核加载用的 .bin
+    # 本来就要 objcopy --strip-all，符号不需要。
+    "-Clink-arg=-s"
+]

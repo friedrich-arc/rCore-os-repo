@@ -1,0 +1,20 @@
+# Rust 项目的配置文件
+[build]
+target = "riscv64gc-unknown-none-elf"
+#默认把Rust代码编译为Risc-V64位裸机目标程序
+ 
+
+#链接器默认内存布局并不能符合要求，通过链接脚本调整它的行为，即放弃默认布局，选择按照链接脚本的方式来摆放代码
+#最终目的：让cpu正确跳至第一条指令顺利执行并且在死机后，能清楚知道死机原因👇
+
+[target.riscv64gc-unknown-none-elf]
+ rustflags = [
+     "-Clink-arg=-Tsrc/linker.ld", "-Cforce-frame-pointers=yes"
+ ]
+ 
+#内核的第一条指令要准确的放入0x80200000位置，如果内核没有放在此处，则在qemu启动时，rustsbi固件会跳到一个空地址，直接死机
+#其中src/linker.ld是编写的链接脚本，T是传递给链接器的参数，表示用这个文件src/linker.ld作为链接脚本
+#"-Cforce-frame-pointers=yes即强制保留"栈帧指针"（在risc-V64中，“s0”（也叫fp）寄存器用于指向当前函数的栈帧底部，有了它，
+#调试器可以顺着fp一路回溯出是谁调用了谁。而在默认情况下编译器为了优化性能，会把fp寄存器当成普通寄存器随便用，使栈帧指针被省掉，
+#一旦内核死机，就只能看到当前出错的位置，而无法知晓是从哪里跳出来的。保留后，便可看到完整的函数调用栈
+

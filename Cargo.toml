@@ -1,0 +1,9 @@
+#配置rust编译目标为RISC-v裸机环境
+
+[package]
+name = "test_os"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+sbi-rt = { version = "0.0.3", features = ["legacy"] }
